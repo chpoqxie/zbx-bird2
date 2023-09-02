@@ -1,0 +1,233 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: 99a35e3a0b584344b551616516030e71
+      template: Bird
+      name: Bird
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 9b44b0ee448241ac9acb703c2236a890
+          name: 'Bird: get protocols'
+          type: ZABBIX_ACTIVE
+          key: bird.bgp.info
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+        - uuid: 2791471c9f574a1e86c79a80426219d9
+          name: 'Bird alive'
+          type: ZABBIX_ACTIVE
+          key: 'proc.num[bird,bird]'
+          triggers:
+            - uuid: 4919a4fe707648318c0fef30bd05d3ea
+              expression: 'last(/Bird/proc.num[bird,bird])<>1'
+              name: 'Bird is dead'
+              priority: HIGH
+      discovery_rules:
+        - uuid: 16bfdab180234436bc0c98b6ab731985
+          name: 'Bird: protocols discovery'
+          type: DEPENDENT
+          key: bird.bgp.info.discovery
+          delay: '0'
+          filter:
+            conditions:
+              - macro: '{#PROTO}'
+                value: '{$PROTO.MATCH}'
+                formulaid: A
+              - macro: '{#PROTO}'
+                value: '{$PROTO.NOT_MATCH}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
+          lifetime: 3d
+          item_prototypes:
+            - uuid: 847992df77754acd9534ea077c0e5b3d
+              name: 'Bird: Protocol "{#PROTO}" info section'
+              type: DEPENDENT
+              key: 'bird.bgp.proto.info[{#PROTO}]'
+              delay: '0'
+              history: '0'
+              trends: '0'
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$..[?(@.proto==''{#PROTO}'')].first()'
+              master_item:
+                key: bird.bgp.info
+            - uuid: 663da808ee6749f9a8293a53eadb4a6c
+              name: 'Bird: Protocol "{#PROTO}" routes exported'
+              type: DEPENDENT
+              key: 'bird.bgp.proto[{#PROTO},exported]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.exported
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 24h
+              master_item:
+                key: 'bird.bgp.proto.info[{#PROTO}]'
+              trigger_prototypes:
+                - uuid: 385f504e637d4a06a0d49bd02926bcff
+                  expression: 'last(/Bird/bird.bgp.proto[{#PROTO},exported])<{$ROUTES_EXP:"{#PROTO}"}'
+                  name: 'Too few exported routes to {#PROTO}'
+                  priority: WARNING
+            - uuid: d4d069c1cb4e419cbdecced2ddd3edcc
+              name: 'Bird: Protocol "{#PROTO}" routes preferred'
+              type: DEPENDENT
+              key: 'bird.bgp.proto[{#PROTO},preferred]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.preferred
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 12h
+              master_item:
+                key: 'bird.bgp.proto.info[{#PROTO}]'
+            - uuid: 5cafa212b32e440e90d75476066e1729
+              name: 'Bird: Protocol "{#PROTO}" reason'
+              type: DEPENDENT
+              key: 'bird.bgp.proto[{#PROTO},reason]'
+              delay: '0'
+              trends: '0'
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.reason
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 12h
+              master_item:
+                key: 'bird.bgp.proto.info[{#PROTO}]'
+            - uuid: 3eed61b2adee4fd28b6f7814636dda9a
+              name: 'Bird: Protocol "{#PROTO}" routes imported'
+              type: DEPENDENT
+              key: 'bird.bgp.proto[{#PROTO},routes]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.routes
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 12h
+              master_item:
+                key: 'bird.bgp.proto.info[{#PROTO}]'
+              trigger_prototypes:
+                - uuid: 58a4b1a6103e464faf684bb72bf3f0d5
+                  expression: 'last(/Bird/bird.bgp.proto[{#PROTO},routes])<{$ROUTES_IMP:"{#PROTO}"}'
+                  name: 'Too few imported routes from {#PROTO}'
+                  priority: WARNING
+            - uuid: 98e1b7e3aace4910ba498dda15a2fec9
+              name: 'Bird: Protocol "{#PROTO}" in state since'
+              type: DEPENDENT
+              key: 'bird.bgp.proto[{#PROTO},since]'
+              delay: '0'
+              trends: '0'
+              description: 'start / up / down'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.since
+                - type: STR_REPLACE
+                  parameters:
+                    - ' '
+                    - T
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      value += "+03:00";
+                      const date = new Date(Date.parse(value));
+                      const timestamp = date.getTime();
+                      return (timestamp/1000|0);
+              master_item:
+                key: 'bird.bgp.proto.info[{#PROTO}]'
+              trigger_prototypes:
+                - uuid: 4059cfcae0f24d059d5eb2c9e89371c3
+                  expression: '(now()-last(/Bird/bird.bgp.proto[{#PROTO},since]))<{$PROTO_STATE_TIME}*60'
+                  name: 'Bird protocol {#PROTO} changed state in last {$PROTO_STATE_TIME}m'
+                  priority: AVERAGE
+            - uuid: 84aa179ef78c49659418026ba7755f4b
+              name: 'Bird: Protocol "{#PROTO}" state'
+              type: DEPENDENT
+              key: 'bird.bgp.proto[{#PROTO},state]'
+              delay: '0'
+              trends: '0'
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.state
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 12h
+              master_item:
+                key: 'bird.bgp.proto.info[{#PROTO}]'
+              trigger_prototypes:
+                - uuid: 97e68e019273484c8ccc850429f6eb39
+                  expression: '(last(/Bird/bird.bgp.proto[{#PROTO},state],#1))<>(last(/Bird/bird.bgp.proto[{#PROTO},state],#2))'
+                  name: 'Protocol {#PROTO} state changed'
+                  priority: AVERAGE
+            - uuid: 94c139214977448c9e3bf05cdd8f86d6
+              name: 'Bird: Protocol "{#PROTO}" status'
+              type: DEPENDENT
+              key: 'bird.bgp.proto[{#PROTO},status]'
+              delay: '0'
+              trends: '0'
+              value_type: CHAR
+              description: 'Established / Passive / Idle'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.status
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 12h
+              master_item:
+                key: 'bird.bgp.proto.info[{#PROTO}]'
+          graph_prototypes:
+            - uuid: 7cf9534c332847f78edf861a9d4f7e1a
+              name: 'Bird: Protocol "{#PROTO}" routes imported/preferred'
+              graph_items:
+                - drawtype: FILLED_REGION
+                  color: 9CCC65
+                  calc_fnc: ALL
+                  item:
+                    host: Bird
+                    key: 'bird.bgp.proto[{#PROTO},routes]'
+                - sortorder: '1'
+                  color: '274482'
+                  calc_fnc: ALL
+                  item:
+                    host: Bird
+                    key: 'bird.bgp.proto[{#PROTO},preferred]'
+          master_item:
+            key: bird.bgp.info
+          lld_macro_paths:
+            - lld_macro: '{#PROTO}'
+              path: $.proto
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.data.[*]'
+      macros:
+        - macro: '{$PROTO.MATCH}'
+          value: '^.*$'
+        - macro: '{$PROTO.NOT_MATCH}'
+          value: CHANGE_IF_NEEDED
+        - macro: '{$PROTO_STATE_TIME}'
+          value: '15'
+          description: 'в течение какого времени (минут) после изменения статуса протокола держать включенным триггер'
+        - macro: '{$ROUTES_EXP}'
+          value: '1'
+          description: 'количество анонсированных маршрутов'
+        - macro: '{$ROUTES_IMP}'
+          value: '900000'
+          description: 'количество принятых маршрутов'
